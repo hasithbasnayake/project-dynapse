@@ -1,143 +1,46 @@
-# Import statements
+#PPA refers to Pixels Per Arc, and is the measure of how many pixels correspond to a degree change in visual angle
 
-# Maybe use Python dataclasses rather than dictionaries? 
+PPA = np.array([8,8])
 
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.signal import convolve2d
-from skimage import data as example_images
+# Creating the Patch Size in both pixel and angular dimensions
 
-# Declaration of PPA, patch-size, and num filters
+PatchSize = Patch()
+PatchSize.Pix = np.array([28,28])
+PatchSize.Ang = np.array([8,8])
 
-PPA = np.array([8,8]) # Pixels Per Arc (PPA) represents angular dimensions, denoting how many pixels represent a degree of visual angle change
+# Setting the dimensions of the kernel in both pixel and angular dimensions
 
-PatchSize = {
-    "Pix" : None,
-    "Ang" : None
-}
+tKSizeOFF = Kernel.OFF()
+tKSizeOFF.Pix = np.array([9,9])
+tKSizeOFF.Ang = np.ceil(tKSizeOFF.Pix / PPA)
 
-tKSizeOFF = {
-    "Pix" : None,
-    "Ang": None
-}
+# Setting the the dimensions of the centre and surround in both pixel and angular dimensions
 
-tKSizeON = {
-    "Pix" : None,
-    "Ang": None
-}
+tSigmaCentreSurroundOFF = SigmaCentreSurround.OFF()
+tSigmaCentreSurroundOFF.Pix = np.array([(1/3) * tKSizeOFF.Pix[0], (2/3) * tKSizeOFF.Pix[0]])
+tSigmaCentreSurroundOFF.Ang = tSigmaCentreSurroundOFF.Pix / PPA
 
-tSigmaCentreSurroundOFF = {
-    "Pix": None,
-    "Ang": None
-}
+# Using the above parameters, set the filter coefficients of the off-center kernel using a difference of gaussians
 
-tSigmaCentreSurroundON = {
-    "Pix": None,
-    "Ang": None
-}
+kernelOFF = DoG(tKSizeOFF.Pix, PPA, tSigmaCentreSurroundOFF.Pix, "off")
 
-def gen_gaussian_kernel(shape=(3,3),sigma=0.5):
-    """
-    2D gaussian mask - should give the same result as MATLAB's
-    fspecial('gaussian',[shape],[sigma])
-    """
-    m,n = [(ss-1.)/2. for ss in shape]
-    y,x = np.ogrid[-m:m+1,-n:n+1]
-    h = np.exp( -(x*x + y*y) / (2.*sigma*sigma) )
-    h[ h < np.finfo(h.dtype).eps*h.max() ] = 0
-    sumh = h.sum()
-    if sumh != 0:
-        h /= sumh
-    return h
+# Now, do the same for the on-center kernel
 
-def DoG(PixelSize, PPA, Sigmas, OnOff):
-  #PixelSize must be odd
-  DoG = {
-      "Size": {
-          "Pix": None,
-          "Ang": None
-      },
-      "Centre": {
-          "Sigma" : {
-              "Pix": None,
-              "Ang": None
-          },
-          "Kernel" : None
-      },
-      "Surround": {
-          "Sigma" : {
-              "Pix": None,
-              "Ang": None
-          },
-          "Ang" : None,
-          "Kernel" : None
-      },
-      "Kernel" : None
-  }
+tKSizeON = Kernel.ON()
+tKSizeON.Pix = tKSizeOFF.Pix
+tKSizeON.Ang = np.ceil(tKSizeOFF.Pix / PPA)
 
-  # Define size of DoG
+tSigmaCentreSurroundON = SigmaCentreSurround.ON()
+tSigmaCentreSurroundON.Pix = np.array([(1/3) * tKSizeON.Pix[0], (2/3) * tKSizeON.Pix[0]])
+tSigmaCentreSurroundON.Ang = tSigmaCentreSurroundON.Pix / PPA
 
-  DoG["Size"]["Pix"] = PixelSize
-  DoG["Size"]["Ang"] = np.ceil(DoG["Size"]["Pix"] / PPA)
+kernelON = DoG(tKSizeON.Pix, PPA, tSigmaCentreSurroundON.Pix, "on")
 
-  # Define centre
+Trimsize = np.array([28,28])
+SamplesPatch = np.array([28,28])
 
-  DoG["Centre"]["Sigma"]["Pix"] = Sigmas[0]
-  DoG["Centre"]["Sigma"]["Ang"] = DoG["Centre"]["Sigma"]["Pix"] / PPA
-  DoG["Centre"]["Kernel"] = gen_gaussian_kernel(DoG["Size"]["Pix"], DoG["Centre"]["Sigma"]["Pix"])
+NFeatures = np.prod(SamplesPatch) * 2
 
-  # Define surround
-
-  DoG["Surround"]["Sigma"]["Pix"] = Sigmas[1]
-  DoG["Surround"]["Sigma"]["Ang"] = DoG["Surround"]["Sigma"]["Pix"] / PPA
-  DoG["Surround"]["Kernel"] = gen_gaussian_kernel(DoG["Size"]["Pix"], DoG["Surround"]["Sigma"]["Pix"])
-
-
-  # Difference of gaussians, depending on whether ON-Centre OFF-Surround or OFF-Centre ON-Surround
-
-  if OnOff == "on":
-    DoG["Kernel"] = DoG["Centre"]["Kernel"] - DoG["Surround"]["Kernel"]
-  if OnOff == "off":
-    DoG["Kernel"] = -DoG["Centre"]["Kernel"] + DoG["Surround"]["Kernel"]
-
-  # Normalization, sum-to-zero
-
-  DoG["Kernel"] = DoG["Kernel"] - np.mean(DoG["Kernel"])
-
-  # Normalization, max output =1
-
-  input_min = 0
-  input_max = 1
-
-  # DoG["Kernel"] /= (np.sum(np.abs(DoG["Kernel"])) / 2) * (input_max - input_min)
-
-  return DoG
-
-# Creating the patch size
-
-PatchSize["Pix"] = np.array([28,28])
-PatchSize["Ang"] = np.array([8,8])
-
-# Create kernel that will represent the center surround
-
-tKSizeOFF["Pix"] = np.array([9,9])
-tKSizeOFF["Ang"] = np.ceil(tKSizeOFF["Pix"] / PPA)
-
-# Set center parameters
-
-tSigmaCentreSurroundOFF["Pix"] = np.array([(1/3) * tKSizeOFF["Pix"][0], (2/3) * tKSizeOFF["Pix"][0]] )
-tSigmaCentreSurroundOFF["Ang"] = tSigmaCentreSurroundOFF["Pix"] / PPA
-
-kernel_off = DoG(tKSizeOFF["Pix"], PPA, tSigmaCentreSurroundOFF["Pix"], 'off')
-
-tKSizeON["Pix"] = tKSizeOFF["Pix"]
-tKSizeON["Ang"] = np.ceil(tKSizeON["Pix"] / PPA) 
-
-tSigmaCentreSurroundON["Pix"] = np.array([(1/3) * tKSizeOFF["Pix"][0], (2/3) * tKSizeOFF["Pix"][0]] )
-tSigmaCentreSurroundON["Ang"] = tSigmaCentreSurroundOFF["Pix"] / PPA
-
-kernel_on = DoG(tKSizeON["Pix"], PPA, tSigmaCentreSurroundON["Pix"], "on")
-
-print(tKSizeOFF["Ang"])
-print(tSigmaCentreSurroundOFF["Pix"])
-print(tSigmaCentreSurroundOFF["Ang"])
+ImSize = Image()
+ImSize.Pix = np.array([28,28])
+ImSize.Ang = [8,8]
