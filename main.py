@@ -1,7 +1,11 @@
 # Import statements
 
+# Maybe use Python dataclasses rather than dictionaries? 
+
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.signal import convolve2d
+from skimage import data as example_images
 
 # Declaration of PPA, patch-size, and num filters
 
@@ -17,7 +21,17 @@ tKSizeOFF = {
     "Ang": None
 }
 
+tKSizeON = {
+    "Pix" : None,
+    "Ang": None
+}
+
 tSigmaCentreSurroundOFF = {
+    "Pix": None,
+    "Ang": None
+}
+
+tSigmaCentreSurroundON = {
     "Pix": None,
     "Ang": None
 }
@@ -37,7 +51,7 @@ def gen_gaussian_kernel(shape=(3,3),sigma=0.5):
     return h
 
 def DoG(PixelSize, PPA, Sigmas, OnOff):
-  #PixelSize must be odd 
+  #PixelSize must be odd
   DoG = {
       "Size": {
           "Pix": None,
@@ -64,7 +78,7 @@ def DoG(PixelSize, PPA, Sigmas, OnOff):
   # Define size of DoG
 
   DoG["Size"]["Pix"] = PixelSize
-  DoG["Size"]["Ang"] = np.ceil(DoG["Size"]["Pix"] / PPA) 
+  DoG["Size"]["Ang"] = np.ceil(DoG["Size"]["Pix"] / PPA)
 
   # Define centre
 
@@ -89,53 +103,41 @@ def DoG(PixelSize, PPA, Sigmas, OnOff):
   # Normalization, sum-to-zero
 
   DoG["Kernel"] = DoG["Kernel"] - np.mean(DoG["Kernel"])
-    
-  # Normalization, max output =1 
-  
+
+  # Normalization, max output =1
+
   input_min = 0
-  input_max = 1 
+  input_max = 1
 
-  # DoG["Kernel"] /= (np.sum(np.abs(DoG["Kernel"])) / 2) * (input_max - input_min) 
+  # DoG["Kernel"] /= (np.sum(np.abs(DoG["Kernel"])) / 2) * (input_max - input_min)
 
-  return DoG 
+  return DoG
 
 # Creating the patch size
 
 PatchSize["Pix"] = np.array([28,28])
 PatchSize["Ang"] = np.array([8,8])
 
-# Create kernel that will represent the center surround 
+# Create kernel that will represent the center surround
 
 tKSizeOFF["Pix"] = np.array([9,9])
 tKSizeOFF["Ang"] = np.ceil(tKSizeOFF["Pix"] / PPA)
 
-# Set center parameters 
+# Set center parameters
 
 tSigmaCentreSurroundOFF["Pix"] = np.array([(1/3) * tKSizeOFF["Pix"][0], (2/3) * tKSizeOFF["Pix"][0]] )
 tSigmaCentreSurroundOFF["Ang"] = tSigmaCentreSurroundOFF["Pix"] / PPA
 
+kernel_off = DoG(tKSizeOFF["Pix"], PPA, tSigmaCentreSurroundOFF["Pix"], 'off')
+
+tKSizeON["Pix"] = tKSizeOFF["Pix"]
+tKSizeON["Ang"] = np.ceil(tKSizeON["Pix"] / PPA) 
+
+tSigmaCentreSurroundON["Pix"] = np.array([(1/3) * tKSizeOFF["Pix"][0], (2/3) * tKSizeOFF["Pix"][0]] )
+tSigmaCentreSurroundON["Ang"] = tSigmaCentreSurroundOFF["Pix"] / PPA
+
+kernel_on = DoG(tKSizeON["Pix"], PPA, tSigmaCentreSurroundON["Pix"], "on")
 
 print(tKSizeOFF["Ang"])
 print(tSigmaCentreSurroundOFF["Pix"])
 print(tSigmaCentreSurroundOFF["Ang"])
-
-kernel_off = DoG(tKSizeOFF["Pix"], PPA, tSigmaCentreSurroundOFF["Pix"], 'off')
-kernel_on = DoG(tKSizeOFF["Pix"], PPA, tSigmaCentreSurroundOFF["Pix"], 'on')
-plt.imshow(kernel_off["Kernel"], cmap="grey")
-
-from scipy.signal import convolve2d
-from skimage import data as example_images
-camera_man = example_images.camera()
-
-table = plt.figure()
-table = plt.figure(figsize=(15,10))
-
-table.add_subplot(1,2,1)
-plt.imshow(convolve2d(camera_man, kernel_off["Kernel"], mode='same'), cmap ="gray")
-plt.title("Off-Center")
-plt.axis("off")
-
-table.add_subplot(1,2,2)
-plt.imshow(convolve2d(camera_man, kernel_on["Kernel"], mode='same'), cmap ="gray")
-plt.title("On-Center")
-plt.axis("off")
